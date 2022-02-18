@@ -4,6 +4,7 @@
 
 namespace App\Services;
 
+use DateInterval;
 use Exception;
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Log;
@@ -35,7 +36,8 @@ class VtexMauticService
         //$reponseVtex = $this->getResponseVtex($apiType, $uri);
         $dataEntitie = 'CL';
         $dataHoraAtual = date('Y-m-d\TH:i');
-        $where = 'createdIn=' . $dataHoraAtual;
+        $dataHoraIni = date('Y-m-d\TH:i', strtotime('-5 minutes', strtotime(date('Y-m-d H:i:s'))));
+        $where = 'createdIn between ' . $dataHoraIni . ' AND ' . $dataHoraAtual;
         //$where = 'createdIn=2022-02-16T14:02';
         $fields = '_all';
 
@@ -95,7 +97,7 @@ class VtexMauticService
         $full_path = $this->url .  'dataentities/' . $dataEntite . '/search?_where=' . $where . '&_fields=' . $fields;
         $request = $this->http->get($full_path, [
             'headers'         => $this->headers,
-            'timeout'         => 30,
+            'timeout'         => 300,
             'connect_timeout' => true,
             'http_errors'     => true,
         ]);
