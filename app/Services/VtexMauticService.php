@@ -42,28 +42,32 @@ class VtexMauticService
         // get reponse for all master data clients (CL) vtex
         $responseVtexMasterData = $this->getResponseVtexMasterData($dataEntitie, $where, $fields);
 
-        // data for api mautic
-        $data = array(
+        if (count(get_object_vars($responseVtexMasterData)) > 0) {
+            // data for api mautic
+            $data = array(
             'firstname' => $responseVtexMasterData->{'0'}->firstName,
             'lastname'  => $responseVtexMasterData->{'0'}->lastName,
             'email'     => $responseVtexMasterData->{'0'}->email,
             'ipAddress' => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
             'overwriteWithBlank' => true,
-        );
+            );
 
-        // mautic token
-        $auth = $this->getTokenMautic();
+            // mautic token
+            $auth = $this->getTokenMautic();
 
-        // insert mautic
-        $integration = $this->postResponseMautic($auth, $data);
+            // insert mautic
+            $integration = $this->postResponseMautic($auth, $data);
 
-        // log
-        if ($integration) {
-            Log::info('Integração realizado com sucesso na data: ' . date('m-d-Y h:i:s a', time()) . ' para o ID: '
-            . $responseVtexMasterData->{'0'}->userId);
+            // log
+            if ($integration) {
+                Log::info('Integração realizado com sucesso na data: ' . date('m-d-Y h:i:s a', time()) . ' para o ID: '
+                . $responseVtexMasterData->{'0'}->userId);
+            } else {
+                Log::error('Falha de integração na data: ' . date('m-d-Y h:i:s a', time()) . ' para o ID: '
+                . $responseVtexMasterData->{'0'}->userId);
+            }
         } else {
-            Log::error('Falha de integração na data: ' . date('m-d-Y h:i:s a', time()) . ' para o ID: '
-            . $responseVtexMasterData->{'0'}->userId);
+            return null;
         }
     }
 
