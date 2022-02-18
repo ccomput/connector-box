@@ -4,6 +4,8 @@
 
 namespace App\Services;
 
+use DateInterval;
+use Exception;
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Log;
 use Mautic\MauticApi;
@@ -33,31 +35,42 @@ class VtexMauticService
         $apiType = 'rns/pub/subscriptions/id';
         //$reponseVtex = $this->getResponseVtex($apiType, $uri);
         $dataEntitie = 'CL';
-        //$dataAtual = date('Y-m-d');
-        //$horaAtual = date('H:i');
         $dataHoraAtual = date('Y-m-d\TH:i');
-        $where = 'createdIn=' . $dataHoraAtual;
+        $dataHoraIni = date('Y-m-d\TH:i', strtotime('-5 minutes', strtotime(date('Y-m-d H:i:s'))));
+        $where = 'createdIn between ' . $dataHoraIni . ' AND ' . $dataHoraAtual;
+        //$where = 'createdIn=2022-02-16T14:02';
         $fields = '_all';
 
+        // get reponse for all master data clients (CL) vtex
         $responseVtexMasterData = $this->getResponseVtexMasterData($dataEntitie, $where, $fields);
 
-        // data for api mautic
-        $data = array(
-            'firstname' => $responseVtexMasterData->{'firstName'},
-            'lastname'  => $responseVtexMasterData->{'lastName'},
-            'email'     => $responseVtexMasterData->{'email'},
-            'ipAddress' => $_SERVER['REMOTE_ADDR'],
+        if (count(get_object_vars($responseVtexMasterData)) > 0) {
+            // data for api mautic
+            $data = array(
+            'firstname' => $responseVtexMasterData->{'0'}->firstName,
+            'lastname'  => $responseVtexMasterData->{'0'}->lastName,
+            'email'     => $responseVtexMasterData->{'0'}->email,
+            'ipAddress' => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
             'overwriteWithBlank' => true,
-        );
+            );
 
-        // mautic token
-        $auth = $this->getTokenMautic();
+            // mautic token
+            $auth = $this->getTokenMautic();
 
-        $dateIntegration = $this->postResponseMautic($auth, $data);
+            // insert mautic
+            $integration = $this->postResponseMautic($auth, $data);
 
-        // log
-        Log::channel('vtexmautic')->info('Integração realizado com sucesso na data: ' . $dateIntegration . 'para o ID: '
-        . $responseVtexMasterData->{'userId'});
+            // log
+            if ($integration) {
+                Log::info('Integração realizado com sucesso na data: ' . date('m-d-Y h:i:s a', time()) . ' para o ID: '
+                . $responseVtexMasterData->{'0'}->userId);
+            } else {
+                Log::error('Falha de integração na data: ' . date('m-d-Y h:i:s a', time()) . ' para o ID: '
+                . $responseVtexMasterData->{'0'}->userId);
+            }
+        } else {
+            return null;
+        }
     }
 
     private function getResponseVtex(string $apiType, string $uri = null)
@@ -84,7 +97,7 @@ class VtexMauticService
         $full_path = $this->url .  'dataentities/' . $dataEntite . '/search?_where=' . $where . '&_fields=' . $fields;
         $request = $this->http->get($full_path, [
             'headers'         => $this->headers,
-            'timeout'         => 30,
+            'timeout'         => 300,
             'connect_timeout' => true,
             'http_errors'     => true,
         ]);
@@ -123,24 +136,43 @@ class VtexMauticService
 
     private function getTokenMautic()
     {
-        $settings = array(
-            'baseUrl'        => 'http://mautic.outbox360.com.br/oauth/v2/authorize',
-            'version'        => 'OAuth2',
+        $settings = [
+            'userName'   => 'ricardo',
+            'password'   => 'b2-4acbox#',
+        ];
+
+        $initAuth = new ApiAuth();
+        $auth     = $initAuth->newAuth($settings, 'BasicAuth');
+
+        //work only https
+        /*$settings = array(
+            'baseUrl'        => 'http://mautic.outbox360.com.br',
+            'version'        => 'OAuth1a',
             'clientKey'      => '1_3n46yeh81uyokcw4w8cggc4sg08o0w8kk00k0sgc88w0kgs8g8',
             'clientSecret'   => '4anvh3wqyhyccw4wg8sswgcswcwwgcwkwwkwcow0coo08s04o0',
             'callback'       => 'http://mautic.outbox360.com.br/'
         );
 
-        // Initiate the auth object
-        $initAuth = new ApiAuth();
-        $auth     = $initAuth->newAuth($settings);
-
-        if ($auth->validateAccessToken()) {
-            if ($auth->accessTokenUpdated()) {
-                $accessTokenData = $auth->getAccessTokenData();
-                //store access token data however you want
-            }
+        try {
+            // Initiate the auth object
+            $initAuth = new ApiAuth();
+            $auth     = $initAuth->newAuth($settings);
+        } catch (Exception $e) {
+            print $e->getMessage();
+        } finally {
+            echo "Primeiro finaly.\n";
         }
+
+        try {
+            if ($auth->validateAccessToken()) {
+                if ($auth->accessTokenUpdated()) {
+                    $accessTokenData = $auth->getAccessTokenData();
+                    //store access token data however you want
+                }
+            }
+        } catch (Exception $e) {
+            print $e->getMessage();
+        }*/
 
         return $auth;
     }
@@ -152,6 +184,10 @@ class VtexMauticService
         $contactApi = $api->newApi("contacts", $auth, $apiUrl);
         $contact = $contactApi->create($data);
 
-        return date('m-d-Y h:i:s a', time());
+        if ($contact) {
+            return true;
+        } else {
+            return false;
+        }
     }
 }
