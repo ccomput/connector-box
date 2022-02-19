@@ -40,6 +40,7 @@ class VtexMauticService
         $where = 'createdIn between ' . $dataHoraIni . ' AND ' . $dataHoraAtual;
         //$where = 'createdIn=2022-02-16T14:02';
         $fields = '_all';
+        $segmentId = 1;
 
         // get reponse for all master data clients (CL) vtex
         $responseVtexMasterData = $this->getResponseVtexMasterData($dataEntitie, $where, $fields);
@@ -57,11 +58,14 @@ class VtexMauticService
             // mautic token
             $auth = $this->getTokenMautic();
 
-            // insert mautic
-            $integration = $this->postResponseMautic($auth, $data);
+            // insert mautic contact
+            $contactId = $this->createContactMautic($auth, $data);
+
+            // add contact to a segment mautic
+            $integrationSegment = $this->addContactToASegmentMautic($segmentId, $contactId, $auth);
 
             // log
-            if ($integration) {
+            if ($integrationSegment) {
                 Log::info('Integração realizado com sucesso na data: ' . date('m-d-Y h:i:s a', time()) . ' para o ID: '
                 . $responseVtexMasterData->{'0'}->userId);
             } else {
@@ -69,6 +73,7 @@ class VtexMauticService
                 . $responseVtexMasterData->{'0'}->userId);
             }
         } else {
+            Log::error('Falha ao buscar dados do master data vetex ' . date('m-d-Y h:i:s a', time()));
             return null;
         }
     }
@@ -177,7 +182,7 @@ class VtexMauticService
         return $auth;
     }
 
-    private function postResponseMautic($auth = null, array $data = [])
+    private function createContactMautic($auth = null, array $data = [])
     {
         $apiUrl     = "http://mautic.outbox360.com.br";
         $api        = new MauticApi();
@@ -185,9 +190,25 @@ class VtexMauticService
         $contact = $contactApi->create($data);
 
         if ($contact) {
-            return true;
+            return $contact['contact']['id'];
         } else {
+            return 0;
+        }
+    }
+
+    private function addContactToASegmentMautic($segmentId, $contactId, $auth = null)
+    {
+        $apiUrl     = "http://mautic.outbox360.com.br";
+        $api        = new MauticApi();
+        $segmentApi = $api->newApi("segments", $auth, $apiUrl);
+        $response   = $segmentApi->addContact($segmentId, $contactId);
+
+        if (!isset($response['success'])) {
+            Log::error('Falha ao adicionar o contato: ' . $contactId . ' ao segmento: ' . $segmentId);
             return false;
+        } else {
+            Log::info('Contato: ' . $contactId . ' adicionado ao segmento: ' . $segmentId . ' com sucesso!');
+            return true;
         }
     }
 }
