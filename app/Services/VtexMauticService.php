@@ -38,9 +38,10 @@ class VtexMauticService
         $dataHoraAtual = date('Y-m-d\TH:i');
         $dataHoraIni = date('Y-m-d\TH:i', strtotime('-5 minutes', strtotime(date('Y-m-d H:i:s'))));
         $where = 'createdIn between ' . $dataHoraIni . ' AND ' . $dataHoraAtual;
-        //$where = 'createdIn=2022-02-16T14:02';
+        //$where = 'createdIn=2022-02-21T17:56';
         $fields = '_all';
-        $segmentId = 1;
+        $segmentId = 36;
+        $segmentAbandonedCartId = 14;
 
         // get reponse for all master data clients (CL) vtex
         $responseVtexMasterData = $this->getResponseVtexMasterData($dataEntitie, $where, $fields);
@@ -61,8 +62,14 @@ class VtexMauticService
             // insert mautic contact
             $contactId = $this->createContactMautic($auth, $data);
 
-            // add contact to a segment mautic
-            $integrationSegment = $this->addContactToASegmentMautic($segmentId, $contactId, $auth);
+            // check abandoned cart
+            if ($responseVtexMasterData->{'0'}->checkouttag->DisplayValue == 'Finalizado') {
+                // add contact to a segment clients in mautic
+                $integrationSegment = $this->addContactToASegmentMautic($segmentId, $contactId, $auth);
+            } else {
+                // add contact to a segment abandoned cart in mautic
+                $integrationSegment = $this->addContactToASegmentMautic($segmentAbandonedCartId, $contactId, $auth);
+            }
 
             // log
             if ($integrationSegment) {
@@ -73,7 +80,7 @@ class VtexMauticService
                 . $responseVtexMasterData->{'0'}->userId);
             }
         } else {
-            Log::error('Falha ao buscar dados do master data vetex ' . date('m-d-Y h:i:s a', time()));
+            //Log::info('Não há dados no master data vetex ' . date('m-d-Y h:i:s a', time()));
             return null;
         }
     }
@@ -84,7 +91,7 @@ class VtexMauticService
         $full_path .= $uri;
         $request = $this->http->get($full_path, [
             'headers'         => $this->headers,
-            'timeout'         => 30,
+            'timeout'         => 240,
             'connect_timeout' => true,
             'http_errors'     => true,
         ]);
@@ -142,8 +149,8 @@ class VtexMauticService
     private function getTokenMautic()
     {
         $settings = [
-            'userName'   => 'ricardo',
-            'password'   => 'b2-4acbox#',
+            'userName'   => 'r3d',
+            'password'   => '@r3d2021',
         ];
 
         $initAuth = new ApiAuth();
@@ -151,11 +158,11 @@ class VtexMauticService
 
         //work only https
         /*$settings = array(
-            'baseUrl'        => 'http://mautic.outbox360.com.br',
-            'version'        => 'OAuth1a',
-            'clientKey'      => '1_3n46yeh81uyokcw4w8cggc4sg08o0w8kk00k0sgc88w0kgs8g8',
-            'clientSecret'   => '4anvh3wqyhyccw4wg8sswgcswcwwgcwkwwkwcow0coo08s04o0',
-            'callback'       => 'http://mautic.outbox360.com.br/'
+            'baseUrl'        => 'https://shure.lumixpro.com.br',
+            'version'        => 'OAuth2',
+            'clientKey'      => '1_30ng5yji050kcg4o84c0g4gwk08k8wgsg80sgwggwk0ckkoo0k',
+            'clientSecret'   => '5tg49wsn7nokogssc4kk8sg4gw4o0kgscg8o0swg4goc404o4k',
+            'callback'       => ''
         );
 
         try {
@@ -163,9 +170,7 @@ class VtexMauticService
             $initAuth = new ApiAuth();
             $auth     = $initAuth->newAuth($settings);
         } catch (Exception $e) {
-            print $e->getMessage();
-        } finally {
-            echo "Primeiro finaly.\n";
+            Log::error('Falha ao realizar autenticação: ' . date('m-d-Y h:i:s a', time()) . ' erro: ' . $e->getMessage());
         }
 
         try {
@@ -176,7 +181,7 @@ class VtexMauticService
                 }
             }
         } catch (Exception $e) {
-            print $e->getMessage();
+            Log::error('Falha ao solicitar o token mautic: ' . date('m-d-Y h:i:s a', time()) . ' erro: ' . $e->getMessage());
         }*/
 
         return $auth;
@@ -184,10 +189,14 @@ class VtexMauticService
 
     private function createContactMautic($auth = null, array $data = [])
     {
-        $apiUrl     = "http://mautic.outbox360.com.br";
-        $api        = new MauticApi();
-        $contactApi = $api->newApi("contacts", $auth, $apiUrl);
-        $contact = $contactApi->create($data);
+        try {
+            $apiUrl     = "https://shure.lumixpro.com.br";
+            $api        = new MauticApi();
+            $contactApi = $api->newApi("contacts", $auth, $apiUrl);
+            $contact = $contactApi->create($data);
+        } catch (Exception $e) {
+            Log::error('Falha ao adicionar o contato: ' . $e->getMessage());
+        }
 
         if ($contact) {
             return $contact['contact']['id'];
@@ -198,7 +207,7 @@ class VtexMauticService
 
     private function addContactToASegmentMautic($segmentId, $contactId, $auth = null)
     {
-        $apiUrl     = "http://mautic.outbox360.com.br";
+        $apiUrl     = "https://shure.lumixpro.com.br";
         $api        = new MauticApi();
         $segmentApi = $api->newApi("segments", $auth, $apiUrl);
         $response   = $segmentApi->addContact($segmentId, $contactId);
