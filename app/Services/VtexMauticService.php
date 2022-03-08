@@ -38,7 +38,8 @@ class VtexMauticService
         $dataHoraAtual = date('Y-m-d\TH:i');
         $dataHoraIni = date('Y-m-d\TH:i', strtotime('-5 minutes', strtotime(date('Y-m-d H:i:s'))));
         $where = 'createdIn between ' . $dataHoraIni . ' AND ' . $dataHoraAtual;
-        //$where = 'createdIn=2022-02-21T17:56';
+        // TODO $where = 'createdIn=2022-02-21T17:56';
+        // TODO $where = 'createdIn between 2022-02-16T14:00 AND 2022-02-16T14:05';
         $fields = '_all';
         $segmentId = 36;
         $segmentAbandonedCartId = 14;
@@ -47,14 +48,27 @@ class VtexMauticService
         $responseVtexMasterData = $this->getResponseVtexMasterData($dataEntitie, $where, $fields);
 
         if (count(get_object_vars($responseVtexMasterData)) > 0) {
-            // data for api mautic
-            $data = array(
-            'firstname' => $responseVtexMasterData->{'0'}->firstName,
-            'lastname'  => $responseVtexMasterData->{'0'}->lastName,
-            'email'     => $responseVtexMasterData->{'0'}->email,
-            'ipAddress' => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
-            'overwriteWithBlank' => true,
-            );
+            if ($responseVtexMasterData->{'0'}->checkouttag->DisplayValue == 'Finalizado') {
+                // data for api mautic
+                $data = array(
+                'firstname' => $responseVtexMasterData->{'0'}->firstName,
+                'lastname'  => $responseVtexMasterData->{'0'}->lastName,
+                'email'     => $responseVtexMasterData->{'0'}->email,
+                'ipAddress' => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
+                'overwriteWithBlank' => true,
+                );
+            } else {
+                // data for api mautic abandoned cart
+                $data = array(
+                    'firstname' => $responseVtexMasterData->{'0'}->firstName,
+                    'lastname'  => $responseVtexMasterData->{'0'}->lastName,
+                    'email'     => $responseVtexMasterData->{'0'}->email,
+                    'skuabandonedcart' => substr($responseVtexMasterData->{'0'}->rclastcart, 4),
+                    'lastdatecart' => $responseVtexMasterData->{'0'}->rclastsessiondate,
+                    'ipAddress' => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
+                    'overwriteWithBlank' => true,
+                );
+            }
 
             // mautic token
             $auth = $this->getTokenMautic();
@@ -153,6 +167,12 @@ class VtexMauticService
             'password'   => '@r3d2021',
         ];
 
+        // TODO settings teste
+        /*$settings = [
+            'userName'   => 'ricardo',
+            'password'   => 'b2-4acbox#',
+        ];*/
+
         $initAuth = new ApiAuth();
         $auth     = $initAuth->newAuth($settings, 'BasicAuth');
 
@@ -190,6 +210,8 @@ class VtexMauticService
     private function createContactMautic($auth = null, array $data = [])
     {
         try {
+            // TODO url teste
+            //$apiUrl     = "http://mautic.outbox360.com.br";
             $apiUrl     = "https://shure.lumixpro.com.br";
             $api        = new MauticApi();
             $contactApi = $api->newApi("contacts", $auth, $apiUrl);
@@ -207,6 +229,8 @@ class VtexMauticService
 
     private function addContactToASegmentMautic($segmentId, $contactId, $auth = null)
     {
+        // TODO url teste
+        //$apiUrl     = "http://mautic.outbox360.com.br";
         $apiUrl     = "https://shure.lumixpro.com.br";
         $api        = new MauticApi();
         $segmentApi = $api->newApi("segments", $auth, $apiUrl);
