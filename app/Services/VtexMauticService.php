@@ -38,30 +38,60 @@ class VtexMauticService
         $dataHoraAtual = date('Y-m-d\TH:i');
         $dataHoraIni = date('Y-m-d\TH:i', strtotime('-5 minutes', strtotime(date('Y-m-d H:i:s'))));
         $where = 'createdIn between ' . $dataHoraIni . ' AND ' . $dataHoraAtual;
-        //$where = 'createdIn=2022-02-16T14:02';
+        // TODO $where = 'createdIn=2022-02-21T17:56';
+        // TODO $where = 'createdIn between 2022-02-16T14:00 AND 2022-02-16T14:05';
+        // TODO $where = 'fabiomariuzzo@icloud.com';
         $fields = '_all';
+        $segmentId = 36;
+        $segmentAbandonedCartId = 14;
 
         // get reponse for all master data clients (CL) vtex
         $responseVtexMasterData = $this->getResponseVtexMasterData($dataEntitie, $where, $fields);
 
         if (count(get_object_vars($responseVtexMasterData)) > 0) {
-            // data for api mautic
-            $data = array(
-            'firstname' => $responseVtexMasterData->{'0'}->firstName,
-            'lastname'  => $responseVtexMasterData->{'0'}->lastName,
-            'email'     => $responseVtexMasterData->{'0'}->email,
-            'ipAddress' => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
-            'overwriteWithBlank' => true,
-            );
+            if ($responseVtexMasterData->{'0'}->checkouttag->DisplayValue == 'Finalizado') {
+                // get shipping estimated date
+                $shippingEstimatedDate = $this->getShippingEstimatedDateVtex($responseVtexMasterData->{'0'}->email);
+
+                // data for api mautic
+                $data = array(
+                'firstname' => $responseVtexMasterData->{'0'}->firstName,
+                'lastname'  => $responseVtexMasterData->{'0'}->lastName,
+                'email'     => $responseVtexMasterData->{'0'}->email,
+                'shippingestimateddate' => $shippingEstimatedDate,
+                'ipAddress' => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
+                'overwriteWithBlank' => true,
+                );
+            } else {
+                // data for api mautic abandoned cart
+                $data = array(
+                    'firstname' => $responseVtexMasterData->{'0'}->firstName,
+                    'lastname'  => $responseVtexMasterData->{'0'}->lastName,
+                    'email'     => $responseVtexMasterData->{'0'}->email,
+                    'skuabandonedcart' => substr($responseVtexMasterData->{'0'}->rclastcart, 4),
+                    'lastdatecart' => $responseVtexMasterData->{'0'}->rclastsessiondate,
+                    'ipAddress' => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
+                    'overwriteWithBlank' => true,
+                );
+            }
 
             // mautic token
             $auth = $this->getTokenMautic();
 
-            // insert mautic
-            $integration = $this->postResponseMautic($auth, $data);
+            // insert mautic contact
+            $contactId = $this->createContactMautic($auth, $data);
+
+            // check abandoned cart
+            if ($responseVtexMasterData->{'0'}->checkouttag->DisplayValue == 'Finalizado') {
+                // add contact to a segment clients in mautic
+                $integrationSegment = $this->addContactToASegmentMautic($segmentId, $contactId, $auth);
+            } else {
+                // add contact to a segment abandoned cart in mautic
+                $integrationSegment = $this->addContactToASegmentMautic($segmentAbandonedCartId, $contactId, $auth);
+            }
 
             // log
-            if ($integration) {
+            if ($integrationSegment) {
                 Log::info('Integração realizado com sucesso na data: ' . date('m-d-Y h:i:s a', time()) . ' para o ID: '
                 . $responseVtexMasterData->{'0'}->userId);
             } else {
@@ -69,6 +99,7 @@ class VtexMauticService
                 . $responseVtexMasterData->{'0'}->userId);
             }
         } else {
+            //Log::info('Não há dados no master data vetex ' . date('m-d-Y h:i:s a', time()));
             return null;
         }
     }
@@ -79,7 +110,7 @@ class VtexMauticService
         $full_path .= $uri;
         $request = $this->http->get($full_path, [
             'headers'         => $this->headers,
-            'timeout'         => 30,
+            'timeout'         => 240,
             'connect_timeout' => true,
             'http_errors'     => true,
         ]);
@@ -94,6 +125,8 @@ class VtexMauticService
 
     private function getResponseVtexMasterData(string $dataEntite, string $where, string $fields)
     {
+        //test
+        //$full_path = $this->url .  'dataentities/' . $dataEntite . '/search?email=' . $where . '&_fields=' . $fields;
         $full_path = $this->url .  'dataentities/' . $dataEntite . '/search?_where=' . $where . '&_fields=' . $fields;
         $request = $this->http->get($full_path, [
             'headers'         => $this->headers,
@@ -105,6 +138,28 @@ class VtexMauticService
         $status = $request ? $request->getStatusCode() : 500;
         if ($response && $status === 200 && $response !== 'null') {
             return (object) json_decode($response);
+        }
+
+        return null;
+    }
+
+    private function getShippingEstimatedDateVtex(string $email)
+    {
+        $full_path = $this->url . 'oms/pvt/orders?q=' . $email;
+        $request = $this->http->get($full_path, [
+            'headers'         => $this->headers,
+            'timeout'         => 300,
+            'connect_timeout' => true,
+            'http_errors'     => true,
+        ]);
+        $response = $request ? $request->getBody()->getContents() : null;
+        $status = $request ? $request->getStatusCode() : 500;
+        if ($response && $status === 200 && $response !== 'null') {
+            $order = (object) json_decode($response);
+            $shippingEstimatedDate = substr($order->list['0']->ShippingEstimatedDateMax, 0, 10);
+            $shippingEstimatedDateConverted = implode("/", array_reverse(explode("-", $shippingEstimatedDate)));
+
+            return $shippingEstimatedDateConverted;
         }
 
         return null;
@@ -137,20 +192,26 @@ class VtexMauticService
     private function getTokenMautic()
     {
         $settings = [
+            'userName'   => 'r3d',
+            'password'   => '@r3d2021',
+        ];
+
+        // TODO settings teste
+        /*$settings = [
             'userName'   => 'ricardo',
             'password'   => 'b2-4acbox#',
-        ];
+        ];*/
 
         $initAuth = new ApiAuth();
         $auth     = $initAuth->newAuth($settings, 'BasicAuth');
 
         //work only https
         /*$settings = array(
-            'baseUrl'        => 'http://mautic.outbox360.com.br',
-            'version'        => 'OAuth1a',
-            'clientKey'      => '1_3n46yeh81uyokcw4w8cggc4sg08o0w8kk00k0sgc88w0kgs8g8',
-            'clientSecret'   => '4anvh3wqyhyccw4wg8sswgcswcwwgcwkwwkwcow0coo08s04o0',
-            'callback'       => 'http://mautic.outbox360.com.br/'
+            'baseUrl'        => 'https://shure.lumixpro.com.br',
+            'version'        => 'OAuth2',
+            'clientKey'      => '1_30ng5yji050kcg4o84c0g4gwk08k8wgsg80sgwggwk0ckkoo0k',
+            'clientSecret'   => '5tg49wsn7nokogssc4kk8sg4gw4o0kgscg8o0swg4goc404o4k',
+            'callback'       => ''
         );
 
         try {
@@ -158,9 +219,7 @@ class VtexMauticService
             $initAuth = new ApiAuth();
             $auth     = $initAuth->newAuth($settings);
         } catch (Exception $e) {
-            print $e->getMessage();
-        } finally {
-            echo "Primeiro finaly.\n";
+            Log::error('Falha ao realizar autenticação: ' . date('m-d-Y h:i:s a', time()) . ' erro: ' . $e->getMessage());
         }
 
         try {
@@ -171,23 +230,47 @@ class VtexMauticService
                 }
             }
         } catch (Exception $e) {
-            print $e->getMessage();
+            Log::error('Falha ao solicitar o token mautic: ' . date('m-d-Y h:i:s a', time()) . ' erro: ' . $e->getMessage());
         }*/
 
         return $auth;
     }
 
-    private function postResponseMautic($auth = null, array $data = [])
+    private function createContactMautic($auth = null, array $data = [])
     {
-        $apiUrl     = "http://mautic.outbox360.com.br";
-        $api        = new MauticApi();
-        $contactApi = $api->newApi("contacts", $auth, $apiUrl);
-        $contact = $contactApi->create($data);
+        try {
+            // TODO url teste
+            //$apiUrl     = "http://mautic.outbox360.com.br";
+            $apiUrl     = "https://shure.lumixpro.com.br";
+            $api        = new MauticApi();
+            $contactApi = $api->newApi("contacts", $auth, $apiUrl);
+            $contact = $contactApi->create($data);
+        } catch (Exception $e) {
+            Log::error('Falha ao adicionar o contato: ' . $e->getMessage());
+        }
 
         if ($contact) {
-            return true;
+            return $contact['contact']['id'];
         } else {
+            return 0;
+        }
+    }
+
+    private function addContactToASegmentMautic($segmentId, $contactId, $auth = null)
+    {
+        // TODO url teste
+        //$apiUrl     = "http://mautic.outbox360.com.br";
+        $apiUrl     = "https://shure.lumixpro.com.br";
+        $api        = new MauticApi();
+        $segmentApi = $api->newApi("segments", $auth, $apiUrl);
+        $response   = $segmentApi->addContact($segmentId, $contactId);
+
+        if (!isset($response['success'])) {
+            Log::error('Falha ao adicionar o contato: ' . $contactId . ' ao segmento: ' . $segmentId);
             return false;
+        } else {
+            Log::info('Contato: ' . $contactId . ' adicionado ao segmento: ' . $segmentId . ' com sucesso!');
+            return true;
         }
     }
 }
