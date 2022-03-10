@@ -40,6 +40,7 @@ class VtexMauticService
         $where = 'createdIn between ' . $dataHoraIni . ' AND ' . $dataHoraAtual;
         // TODO $where = 'createdIn=2022-02-21T17:56';
         // TODO $where = 'createdIn between 2022-02-16T14:00 AND 2022-02-16T14:05';
+        // TODO $where = 'fabiomariuzzo@icloud.com';
         $fields = '_all';
         $segmentId = 36;
         $segmentAbandonedCartId = 14;
@@ -49,11 +50,15 @@ class VtexMauticService
 
         if (count(get_object_vars($responseVtexMasterData)) > 0) {
             if ($responseVtexMasterData->{'0'}->checkouttag->DisplayValue == 'Finalizado') {
+                // get shipping estimated date
+                $shippingEstimatedDate = $this->getShippingEstimatedDateVtex($responseVtexMasterData->{'0'}->email);
+
                 // data for api mautic
                 $data = array(
                 'firstname' => $responseVtexMasterData->{'0'}->firstName,
                 'lastname'  => $responseVtexMasterData->{'0'}->lastName,
                 'email'     => $responseVtexMasterData->{'0'}->email,
+                'shippingestimateddate' => $shippingEstimatedDate,
                 'ipAddress' => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
                 'overwriteWithBlank' => true,
                 );
@@ -120,6 +125,8 @@ class VtexMauticService
 
     private function getResponseVtexMasterData(string $dataEntite, string $where, string $fields)
     {
+        //test
+        //$full_path = $this->url .  'dataentities/' . $dataEntite . '/search?email=' . $where . '&_fields=' . $fields;
         $full_path = $this->url .  'dataentities/' . $dataEntite . '/search?_where=' . $where . '&_fields=' . $fields;
         $request = $this->http->get($full_path, [
             'headers'         => $this->headers,
@@ -131,6 +138,28 @@ class VtexMauticService
         $status = $request ? $request->getStatusCode() : 500;
         if ($response && $status === 200 && $response !== 'null') {
             return (object) json_decode($response);
+        }
+
+        return null;
+    }
+
+    private function getShippingEstimatedDateVtex(string $email)
+    {
+        $full_path = $this->url . 'oms/pvt/orders?q=' . $email;
+        $request = $this->http->get($full_path, [
+            'headers'         => $this->headers,
+            'timeout'         => 300,
+            'connect_timeout' => true,
+            'http_errors'     => true,
+        ]);
+        $response = $request ? $request->getBody()->getContents() : null;
+        $status = $request ? $request->getStatusCode() : 500;
+        if ($response && $status === 200 && $response !== 'null') {
+            $order = (object) json_decode($response);
+            $shippingEstimatedDate = substr($order->list['0']->ShippingEstimatedDateMax, 0, 10);
+            $shippingEstimatedDateConverted = implode("/", array_reverse(explode("-", $shippingEstimatedDate)));
+
+            return $shippingEstimatedDateConverted;
         }
 
         return null;
