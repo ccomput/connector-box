@@ -63,12 +63,38 @@ class VtexMauticService
                 'overwriteWithBlank' => true,
                 );
             } else {
+                //get name sku abandoned cart
+                $skus = substr($responseVtexMasterData->{'0'}->rclastcart, 4);
+                $skusExplode = explode("&", $skus);
+                $skusSepareted = "";
+                $skusForMautic = "";
+
+                for ($i = 0; $i < count($skusExplode) - 1; $i++) {
+                    if ($this->like('sku%', $skusExplode[$i])) {
+                        $skusSepareted .= $skusExplode[$i];
+                    }
+                }
+
+                $skusApi = explode("sku=", $skusSepareted);
+
+                if ($skusApi) {
+                    for ($p = 1; $p < count($skusApi); $p++) {
+                        $product = $this->getProductBySku($skusApi[$p]);
+                        if ($p == 1) {
+                            $skusForMautic = $product->Name;
+                        } elseif ($p > 1) {
+                            $skusForMautic .= ' e ' . $product->Name;
+                        }
+                    }
+                }
+
                 // data for api mautic abandoned cart
                 $data = array(
                     'firstname' => $responseVtexMasterData->{'0'}->firstName,
                     'lastname'  => $responseVtexMasterData->{'0'}->lastName,
                     'email'     => $responseVtexMasterData->{'0'}->email,
                     'skuabandonedcart' => substr($responseVtexMasterData->{'0'}->rclastcart, 4),
+                    'skunameabandonedcart' => $skusForMautic,
                     'lastdatecart' => $responseVtexMasterData->{'0'}->rclastsessiondate,
                     'ipAddress' => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
                     'overwriteWithBlank' => true,
@@ -126,7 +152,7 @@ class VtexMauticService
     private function getResponseVtexMasterData(string $dataEntite, string $where, string $fields)
     {
         //test
-        //$full_path = $this->url .  'dataentities/' . $dataEntite . '/search?email=' . $where . '&_fields=' . $fields;
+        // TODO $full_path = $this->url .  'dataentities/' . $dataEntite . '/search?email=' . $where . '&_fields=' . $fields;
         $full_path = $this->url .  'dataentities/' . $dataEntite . '/search?_where=' . $where . '&_fields=' . $fields;
         $request = $this->http->get($full_path, [
             'headers'         => $this->headers,
@@ -160,6 +186,24 @@ class VtexMauticService
             $shippingEstimatedDateConverted = implode("/", array_reverse(explode("-", $shippingEstimatedDate)));
 
             return $shippingEstimatedDateConverted;
+        }
+
+        return null;
+    }
+
+    private function getProductBySku(string $sku)
+    {
+        $full_path = $this->url . 'catalog/pvt/stockkeepingunit/' . $sku;
+        $request = $this->http->get($full_path, [
+            'headers'         => $this->headers,
+            'timeout'         => 300,
+            'connect_timeout' => true,
+            'http_errors'     => true,
+        ]);
+        $response = $request ? $request->getBody()->getContents() : null;
+        $status = $request ? $request->getStatusCode() : 500;
+        if ($response && $status === 200 && $response !== 'null') {
+            return (object) json_decode($response);
         }
 
         return null;
@@ -272,5 +316,12 @@ class VtexMauticService
             Log::info('Contato: ' . $contactId . ' adicionado ao segmento: ' . $segmentId . ' com sucesso!');
             return true;
         }
+    }
+
+    private function like($needle, $haystack)
+    {
+        $regex = '/' . str_replace('%', '.*?', $needle) . '/';
+
+        return preg_match($regex, $haystack) > 0;
     }
 }
