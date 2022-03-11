@@ -49,6 +49,10 @@ class VtexMauticService
         $responseVtexMasterData = $this->getResponseVtexMasterData($dataEntitie, $where, $fields);
 
         if (count(get_object_vars($responseVtexMasterData)) > 0) {
+            // get list skus cart
+            $skus = substr($responseVtexMasterData->{'0'}->rclastcart, 4);
+            $skusForMautic = $this->getSkusName($skus);
+
             if ($responseVtexMasterData->{'0'}->checkouttag->DisplayValue == 'Finalizado') {
                 // get shipping estimated date
                 $shippingEstimatedDate = $this->getShippingEstimatedDateVtex($responseVtexMasterData->{'0'}->email);
@@ -59,35 +63,11 @@ class VtexMauticService
                 'lastname'  => $responseVtexMasterData->{'0'}->lastName,
                 'email'     => $responseVtexMasterData->{'0'}->email,
                 'shippingestimateddate' => $shippingEstimatedDate,
+                'skuslastorder' => $skusForMautic,
                 'ipAddress' => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
                 'overwriteWithBlank' => true,
                 );
             } else {
-                //get name sku abandoned cart
-                $skus = substr($responseVtexMasterData->{'0'}->rclastcart, 4);
-                $skusExplode = explode("&", $skus);
-                $skusSepareted = "";
-                $skusForMautic = "";
-
-                for ($i = 0; $i < count($skusExplode) - 1; $i++) {
-                    if ($this->like('sku%', $skusExplode[$i])) {
-                        $skusSepareted .= $skusExplode[$i];
-                    }
-                }
-
-                $skusApi = explode("sku=", $skusSepareted);
-
-                if ($skusApi) {
-                    for ($p = 1; $p < count($skusApi); $p++) {
-                        $product = $this->getProductBySku($skusApi[$p]);
-                        if ($p == 1) {
-                            $skusForMautic = $product->Name;
-                        } elseif ($p > 1) {
-                            $skusForMautic .= ' e ' . $product->Name;
-                        }
-                    }
-                }
-
                 // data for api mautic abandoned cart
                 $data = array(
                     'firstname' => $responseVtexMasterData->{'0'}->firstName,
@@ -151,8 +131,8 @@ class VtexMauticService
 
     private function getResponseVtexMasterData(string $dataEntite, string $where, string $fields)
     {
-        //test
-        // TODO $full_path = $this->url .  'dataentities/' . $dataEntite . '/search?email=' . $where . '&_fields=' . $fields;
+        //test TODO
+        //$full_path = $this->url .  'dataentities/' . $dataEntite . '/search?email=' . $where . '&_fields=' . $fields;
         $full_path = $this->url .  'dataentities/' . $dataEntite . '/search?_where=' . $where . '&_fields=' . $fields;
         $request = $this->http->get($full_path, [
             'headers'         => $this->headers,
@@ -182,18 +162,47 @@ class VtexMauticService
         $status = $request ? $request->getStatusCode() : 500;
         if ($response && $status === 200 && $response !== 'null') {
             $order = (object) json_decode($response);
-            $shippingEstimatedDate = substr($order->list['0']->ShippingEstimatedDateMax, 0, 10);
-            $shippingEstimatedDateConverted = implode("/", array_reverse(explode("-", $shippingEstimatedDate)));
+            /*$shippingEstimatedDate = substr($order->list['0']->ShippingEstimatedDateMax, 0, 10);
+            $shippingEstimatedDateConverted = implode("/", array_reverse(explode("-", $shippingEstimatedDate)));*/
 
-            return $shippingEstimatedDateConverted;
+            return $order->list['0']->ShippingEstimatedDateMax;
         }
 
         return null;
     }
 
+    private function getSkusName(string $skus)
+    {
+        $skusExplode = explode("&", $skus);
+                $skusSepareted = "";
+                $skusForMautic = "";
+
+        for ($i = 0; $i < count($skusExplode) - 1; $i++) {
+            if ($this->like('sku%', $skusExplode[$i])) {
+                $skusSepareted .= $skusExplode[$i];
+            }
+        }
+
+                $skusApi = explode("sku=", $skusSepareted);
+
+        if ($skusApi) {
+            for ($p = 1; $p < count($skusApi); $p++) {
+                $product = $this->getProductBySku($skusApi[$p]);
+                print $product->{'0'}->productName;
+                if ($p == 1) {
+                    $skusForMautic = $product->{'0'}->productName;
+                } elseif ($p > 1) {
+                    $skusForMautic .= ' e ' . $product->{'0'}->productName;
+                }
+            }
+        }
+
+        return $skusForMautic;
+    }
+
     private function getProductBySku(string $sku)
     {
-        $full_path = $this->url . 'catalog/pvt/stockkeepingunit/' . $sku;
+        $full_path = $this->url . 'catalog_system/pub/products/search?fq=skuId:' . $sku;
         $request = $this->http->get($full_path, [
             'headers'         => $this->headers,
             'timeout'         => 300,
