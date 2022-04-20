@@ -53,6 +53,9 @@ class VtexMauticService
             $skus = substr($responseVtexMasterData->{'0'}->rclastcart, 4);
             $skusForMautic = $this->getSkusName($skus);
 
+            // get list link produtct html
+            $linksForMautic = $this->getLinkListProductBySku($skus);
+
             if ($responseVtexMasterData->{'0'}->checkouttag->DisplayValue == 'Finalizado') {
                 // get shipping estimated date
                 $shippingEstimatedDate = $this->getShippingEstimatedDateVtex($responseVtexMasterData->{'0'}->email);
@@ -64,6 +67,7 @@ class VtexMauticService
                 'email'     => $responseVtexMasterData->{'0'}->email,
                 'shippingestimateddate' => $shippingEstimatedDate,
                 'skuslastorder' => $skusForMautic,
+                'producturl' => $linksForMautic,
                 'ipAddress' => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
                 'overwriteWithBlank' => true,
                 );
@@ -174,8 +178,8 @@ class VtexMauticService
     private function getSkusName(string $skus)
     {
         $skusExplode = explode("&", $skus);
-                $skusSepareted = "";
-                $skusForMautic = "";
+        $skusSepareted = "";
+        $skusForMautic = "";
 
         for ($i = 0; $i < count($skusExplode) - 1; $i++) {
             if ($this->like('sku%', $skusExplode[$i])) {
@@ -183,12 +187,11 @@ class VtexMauticService
             }
         }
 
-                $skusApi = explode("sku=", $skusSepareted);
+        $skusApi = explode("sku=", $skusSepareted);
 
         if ($skusApi) {
             for ($p = 1; $p < count($skusApi); $p++) {
                 $product = $this->getProductBySku($skusApi[$p]);
-                print $product->{'0'}->productName;
                 if ($p == 1) {
                     $skusForMautic = $product->{'0'}->productName;
                 } elseif ($p > 1) {
@@ -198,6 +201,34 @@ class VtexMauticService
         }
 
         return $skusForMautic;
+    }
+
+    private function getLinkListProductBySku(string $skus)
+    {
+        $skusExplode = explode("&", $skus);
+        $skusSepareted = "";
+        $linksForMautic = "";
+
+        for ($i = 0; $i < count($skusExplode) - 1; $i++) {
+            if ($this->like('sku%', $skusExplode[$i])) {
+                $skusSepareted .= $skusExplode[$i];
+            }
+        }
+
+        $skusApi = explode("sku=", $skusSepareted);
+
+        if ($skusApi) {
+            for ($p = 1; $p < count($skusApi); $p++) {
+                $product = $this->getProductBySku($skusApi[$p]);
+                $vtexLink = str_replace('lojashure.myvtex.com', 'lojashure.com', $product->{'0'}->link);
+                if ($p == 1) {
+                    $linksForMautic = '<a href="' . $vtexLink . '" style="display:inline-block;background:#000000;color:#B2FF33;font-family:Helvetica,Arial;font-size:16px;font-weight:bold;line-height:100%;letter-spacing:0px;margin:0;text-decoration:none;text-transform:none;padding:15px 0px 15px 0px;mso-padding-alt:0px;border-radius:5px;" target="_blank"> AVALIAR [NOME DO PRODUTO]</a>';
+                } elseif ($p > 1) {
+                    $linksForMautic .= '<br />' . '<a href="' . $vtexLink . '" style="display:inline-block;background:#000000;color:#B2FF33;font-family:Helvetica,Arial;font-size:16px;font-weight:bold;line-height:100%;letter-spacing:0px;margin:0;text-decoration:none;text-transform:none;padding:15px 0px 15px 0px;mso-padding-alt:0px;border-radius:5px;" target="_blank"> AVALIAR [NOME DO PRODUTO]</a>';
+                }
+            }
+        }
+        return $linksForMautic;
     }
 
     private function getProductBySku(string $sku)

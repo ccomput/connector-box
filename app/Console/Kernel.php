@@ -31,7 +31,7 @@ class Kernel extends ConsoleKernel
         $schedule->call(function () {
             $integrationService = new VtexMauticService();
             $integrationService->integration();
-        })->everyFiveMinutes();
+        })->everyMinute();
     }
 
     /**
